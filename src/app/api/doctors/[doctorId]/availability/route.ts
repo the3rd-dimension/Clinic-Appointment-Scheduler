@@ -1,26 +1,47 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { pool } from "@/lib/prisma";
 
-const SLOT_MINUTES = 45;
-const OPENING_HOUR = 8;
-const CLOSING_HOUR = 17;
+type RouteContext = {
+  params: Promise<{ doctorId: string }>;
+};
 
-export async function GET(request: Request, { params }: { params: Promise<{ doctorId: string }> }) {
-  const { doctorId } = await params;
-  const date = new URL(request.url).searchParams.get("date");
-  if (!date || Number.isNaN(Date.parse(date))) return NextResponse.json({ error: "A valid date is required." }, { status: 400 });
+export async function GET(
+  _request: Request,
+  { params }: RouteContext,
+) {
+  try {
+    const { doctorId } = await params;
 
-  const dayStart = new Date(`${date}T00:00:00.000Z`);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-  const appointments = await prisma.appointment.findMany({
-    where: { doctorId, status: "SCHEDULED", startTime: { lt: dayEnd }, endTime: { gt: dayStart } },
-    select: { startTime: true, endTime: true },
-  });
-  const slots: string[] = [];
-  for (let minutes = OPENING_HOUR * 60; minutes + SLOT_MINUTES <= CLOSING_HOUR * 60; minutes += SLOT_MINUTES) {
-    const start = new Date(dayStart.getTime() + minutes * 60 * 1000);
-    const end = new Date(start.getTime() + SLOT_MINUTES * 60 * 1000);
-    if (!appointments.some((appointment) => appointment.startTime < end && appointment.endTime > start)) slots.push(start.toISOString());
+    const doctorResult = await pool.query(
+      `SELECT "id" FROM "Doctor" WHERE "id" = $1`,
+      [doctorId],
+    );
+
+    if (doctorResult.rows.length === 0) {
+      return NextResponse.json(
+        { error: "Doctor not found" },
+        { status: 404 },
+      );
+    }
+
+    const { rows } = await pool.query(
+      `
+        SELECT "id", "startTime", "endTime", "status"
+        FROM "Appointment"
+        WHERE "doctorId" = $1
+          AND "status" = 'SCHEDULED'
+        ORDER BY "startTime" ASC
+      `,
+      [doctorId],
+    );
+
+    return NextResponse.json(rows);
+  } catch (error) {
+    console.error("Failed to fetch doctor availability:", error);
+
+    return NextResponse.json(
+      { error: "Failed to fetch doctor availability" },
+      { status: 500 },
+    );
   }
-  return NextResponse.json({ date, slots });
 }
