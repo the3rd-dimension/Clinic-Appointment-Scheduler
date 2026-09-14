@@ -31,3 +31,4 @@ Responsive GUI: Mobile-friendly, accessible interface built for cross-platform u
 - `POST /api/appointments` validates and creates a patient appointment in a serializable transaction.
 
 PostgreSQL's `btree_gist` exclusion constraint prevents overlapping `SCHEDULED` appointments for the same doctor even under concurrent requests.
+fjekdi
