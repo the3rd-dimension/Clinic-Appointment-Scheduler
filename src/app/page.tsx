@@ -25,9 +25,9 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/doctors")
       .then((res) => res.json())
-      .then((data) => {
+      .then((data: Doctor[]) => {
         if (Array.isArray(data) && data.length > 0) {
-          const formatted = data.map((doc: any) => ({
+          const formatted = data.map((doc) => ({
             ...doc,
             initials: doc.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase(),
             accent: "bg-[#e5f0ea] text-[#27604b]",

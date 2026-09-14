@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { doctorQuerySchema } from "@/lib/validation";
+
+type DoctorRow = {
+  id: string;
+  name: string;
+  specialization: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export async function GET(request: Request) {
   try {
@@ -32,7 +40,7 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY "name" ASC`;
 
-    const { rows } = await pool.query(query, values);
+    const rows = await prisma.$queryRawUnsafe<DoctorRow[]>(query, ...values);
 
     return NextResponse.json(rows);
   } catch (error) {

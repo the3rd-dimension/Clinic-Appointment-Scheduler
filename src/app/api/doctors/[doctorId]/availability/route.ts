@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 type RouteContext = {
   params: Promise<{ doctorId: string }>;
 };
+
+type AppointmentRow = {
+  id: string;
+  startTime: Date;
+  endTime: Date;
+  status: string;
+};
+
+type DoctorIdRow = { id: string };
 
 export async function GET(
   _request: Request,
@@ -12,19 +21,19 @@ export async function GET(
   try {
     const { doctorId } = await params;
 
-    const doctorResult = await pool.query(
+    const doctorResult = await prisma.$queryRawUnsafe<DoctorIdRow[]>(
       `SELECT "id" FROM "Doctor" WHERE "id" = $1`,
-      [doctorId],
+      doctorId,
     );
 
-    if (doctorResult.rows.length === 0) {
+    if (doctorResult.length === 0) {
       return NextResponse.json(
         { error: "Doctor not found" },
         { status: 404 },
       );
     }
 
-    const { rows } = await pool.query(
+    const rows = await prisma.$queryRawUnsafe<AppointmentRow[]>(
       `
         SELECT "id", "startTime", "endTime", "status"
         FROM "Appointment"
@@ -32,7 +41,7 @@ export async function GET(
           AND "status" = 'SCHEDULED'
         ORDER BY "startTime" ASC
       `,
-      [doctorId],
+      doctorId,
     );
 
     return NextResponse.json(rows);

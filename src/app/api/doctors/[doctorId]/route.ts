@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 type RouteContext = {
   params: Promise<{ doctorId: string }>;
+};
+
+type DoctorRow = {
+  id: string;
+  name: string;
+  specialization: string;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export async function GET(
@@ -19,13 +27,13 @@ export async function GET(
       );
     }
 
-    const { rows } = await pool.query(
+    const rows = await prisma.$queryRawUnsafe<DoctorRow[]>(
       `
         SELECT "id", "name", "specialization", "createdAt", "updatedAt"
         FROM "Doctor"
         WHERE "id" = $1
       `,
-      [doctorId],
+      doctorId,
     );
 
     if (rows.length === 0) {
