@@ -2,14 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { doctorQuerySchema } from "@/lib/validation";
 
-type DoctorRow = {
-  id: string;
-  name: string;
-  specialization: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -27,20 +19,17 @@ export async function GET(request: Request) {
 
     const { specialization } = parsedQuery.data;
 
-    const values: string[] = [];
-    let query = `
-      SELECT "id", "name", "specialization", "createdAt", "updatedAt"
-      FROM "Doctor"
-    `;
-
-    if (specialization) {
-      values.push(specialization);
-      query += ` WHERE "specialization" ILIKE $1`;
-    }
-
-    query += ` ORDER BY "name" ASC`;
-
-    const rows = await prisma.$queryRawUnsafe<DoctorRow[]>(query, ...values);
+    const rows = await prisma.doctor.findMany({
+      where: specialization
+        ? { specialization: { contains: specialization, mode: "insensitive" } }
+        : undefined,
+      include: {
+        availability: {
+          orderBy: [{ dayOfWeek: "asc" }, { startMinute: "asc" }],
+        },
+      },
+      orderBy: { name: "asc" },
+    });
 
     return NextResponse.json(rows);
   } catch (error) {

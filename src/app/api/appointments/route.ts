@@ -17,8 +17,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const { doctorId, patientName, patientEmail, startTime, endTime } =
+  const { doctorId, patientName, patientEmail, appointmentDate, startMinute, message } =
     parsed.data;
+  const appointmentStart = new Date(`${appointmentDate}T00:00:00.000Z`);
+  appointmentStart.setUTCMinutes(startMinute);
+  const appointmentEnd = new Date(appointmentStart);
+  appointmentEnd.setUTCMinutes(startMinute + 45);
 
   try {
     const appointment = await prisma.$transaction(
@@ -29,6 +33,32 @@ export async function POST(request: Request) {
 
         if (!doctor) {
           throw new Error("DOCTOR_NOT_FOUND");
+        }
+
+        const availableWindow = await transaction.doctorAvailability.findFirst({
+          where: {
+            doctorId,
+            dayOfWeek: appointmentStart.getUTCDay(),
+            startMinute: { lte: startMinute },
+            endMinute: { gte: startMinute + 45 },
+          },
+        });
+
+        if (!availableWindow) {
+          throw new Error("OUTSIDE_AVAILABILITY");
+        }
+
+        const conflictingAppointment = await transaction.appointment.findFirst({
+          where: {
+            doctorId,
+            status: "SCHEDULED",
+            startTime: { lt: appointmentEnd },
+            endTime: { gt: appointmentStart },
+          },
+        });
+
+        if (conflictingAppointment) {
+          throw new Error("SLOT_UNAVAILABLE");
         }
 
         const patient = await transaction.patient.upsert({
@@ -44,8 +74,9 @@ export async function POST(request: Request) {
           data: {
             doctorId,
             patientId: patient.id,
-            startTime,
-            endTime,
+            startTime: appointmentStart,
+            endTime: appointmentEnd,
+            message,
           },
           include: {
             doctor: true,
@@ -73,6 +104,20 @@ export async function POST(request: Request) {
       );
     }
 
+    if (error instanceof Error && error.message === "OUTSIDE_AVAILABILITY") {
+      return NextResponse.json(
+        { error: "That doctor is not available during the selected time." },
+        { status: 409 },
+      );
+    }
+
+    if (error instanceof Error && error.message === "SLOT_UNAVAILABLE") {
+      return NextResponse.json(
+        { error: "That slot is already booked. Please choose another time." },
+        { status: 409 },
+      );
+    }
+
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
@@ -92,6 +137,19 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2022"
+    ) {
+      console.error("Appointment table is missing a required column:", error);
+      return NextResponse.json(
+        { error: "The appointment database needs its latest schema update." },
+        { status: 500 },
+      );
+    }
+
+    console.error("Failed to create appointment:", error);
 
     return NextResponse.json(
       { error: "We could not create the appointment. Please try again." },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { ArrowRight, CalendarDays, Check, ChevronDown, Clock3, Search, ShieldCheck, Stethoscope } from "lucide-react";
+import { ArrowRight, CalendarDays, Check, ChevronDown, Clock3, ExternalLink, Search, ShieldCheck, Stethoscope } from "lucide-react";
 
 type Doctor = { 
   id: string; 
@@ -12,13 +12,20 @@ type Doctor = {
   nextAvailable?: string 
 };
 
+type Slot = { startTime: string; endTime: string; label: string; startMinute: number };
+
+const today = new Date().toISOString().slice(0, 10);
+
 export default function Home() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [specialization, setSpecialization] = useState("All specialties");
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string>("02:30 PM");
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [message, setMessage] = useState("");
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Fetch live doctors from your API route on page load
@@ -40,7 +47,13 @@ export default function Home() {
       .catch((err) => console.error("Failed to load doctors:", err));
   }, []);
 
-  const slots = ["08:30 AM", "09:15 AM", "10:00 AM", "11:30 AM", "01:00 PM", "02:30 PM", "03:15 PM", "04:00 PM"];
+  useEffect(() => {
+    if (!selectedDoctor) return;
+    fetch(`/api/doctors/${selectedDoctor.id}/availability?date=${selectedDate}`)
+      .then((res) => res.json())
+      .then((data: Slot[]) => setSlots(Array.isArray(data) ? data : []))
+      .catch(() => setSlots([]));
+  }, [selectedDate, selectedDoctor]);
 
   const filteredDoctors = useMemo(() => 
     specialization === "All specialties" 
@@ -54,13 +67,12 @@ export default function Home() {
     setStatus(null);
     if (!selectedDoctor) return;
     
-    const startTime = new Date(`2026-09-14 ${selectedSlot}`); 
-    const endTime = new Date(startTime.getTime() + 45 * 60 * 1000);
+    if (!selectedSlot) return;
     
     const response = await fetch("/api/appointments", { 
       method: "POST", 
       headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify({ doctorId: selectedDoctor.id, patientName, patientEmail, startTime, endTime }) 
+      body: JSON.stringify({ doctorId: selectedDoctor.id, patientName, patientEmail, message, appointmentDate: selectedDate, startMinute: selectedSlot.startMinute, startTime: selectedSlot.startTime, endTime: selectedSlot.endTime }) 
     });
     
     const result = await response.json(); 
@@ -130,7 +142,7 @@ export default function Home() {
               <button 
                 type="button" 
                 key={doctor.id} 
-                onClick={() => setSelectedDoctor(doctor)} 
+                onClick={() => { setSelectedDoctor(doctor); setSelectedSlot(null); }} 
                 className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition ${selectedDoctor?.id === doctor.id ? "border-[#579172] bg-[#f3f8f4]" : "border-[#e6ece8] hover:border-[#b8cfc0]"}`}
               >
                 <div className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${doctor.accent}`}>
@@ -162,7 +174,16 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <CalendarDays className="text-[#579172]" size={18} />
               <div>
-                <p className="text-sm font-medium">Monday, September 14</p>
+                <label className="block text-sm font-medium">
+                  <span className="sr-only">Choose appointment date</span>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    min={today}
+                    onChange={(event) => { setSelectedDate(event.target.value); setSelectedSlot(null); }}
+                    className="bg-transparent outline-none"
+                  />
+                </label>
                 <p className="text-xs text-[#84948a]">45 minute consultation</p>
               </div>
             </div>
@@ -173,13 +194,18 @@ export default function Home() {
             {slots.map((slot) => (
               <button 
                 type="button" 
-                key={slot} 
+                key={slot.startTime}
                 onClick={() => setSelectedSlot(slot)} 
-                className={`rounded-lg border px-2 py-3 text-sm transition ${selectedSlot === slot ? "border-[#27604b] bg-[#27604b] text-white" : "border-[#d5e3d8] bg-white text-[#4d6959] hover:border-[#579172]"}`}
+                className={`rounded-lg border px-2 py-3 text-sm transition ${selectedSlot?.startTime === slot.startTime ? "border-[#27604b] bg-[#27604b] text-white" : "border-[#d5e3d8] bg-white text-[#4d6959] hover:border-[#579172]"}`}
               >
-                <Clock3 className="mr-1 inline" size={13} />{slot}
+                <Clock3 className="mr-1 inline" size={13} />{slot.label}
               </button>
             ))}
+            {slots.length === 0 && (
+              <p className="col-span-full rounded-lg border border-dashed border-[#c8d9cc] px-4 py-5 text-center text-sm text-[#718279]">
+                No open appointments for this doctor on this date.
+              </p>
+            )}
           </div>
           
           <div className="mt-7 border-t border-[#d5e3d8] pt-6">
@@ -201,7 +227,17 @@ export default function Home() {
                 placeholder="Email address" 
                 className="w-full rounded-lg border border-[#d5e3d8] bg-white px-4 py-3 text-sm outline-none placeholder:text-[#9aa9a0] focus:border-[#579172]" 
               />
-              <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#27604b] py-3.5 text-sm font-semibold text-white transition hover:bg-[#1d4939]">
+              <textarea
+                required
+                minLength={2}
+                maxLength={500}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                placeholder="What would you like to book this appointment for?"
+                rows={3}
+                className="w-full resize-none rounded-lg border border-[#d5e3d8] bg-white px-4 py-3 text-sm outline-none placeholder:text-[#9aa9a0] focus:border-[#579172]"
+              />
+              <button disabled={!selectedSlot} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#27604b] py-3.5 text-sm font-semibold text-white transition hover:bg-[#1d4939] disabled:cursor-not-allowed disabled:opacity-50">
                 Confirm appointment <ArrowRight size={16} />
               </button>
             </form>
@@ -216,11 +252,17 @@ export default function Home() {
       </section>
       
       <footer className="border-t border-[#dce6df] bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-6 text-xs text-[#84948a] sm:flex-row sm:items-center sm:justify-between lg:px-10">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-6 text-xs text-[#84948a] lg:px-10">
           <div className="flex items-center gap-2">
             <ShieldCheck size={15} className="text-[#579172]" /> Your health information is protected and private.
           </div>
-          <span>© 2026 Northstar Health</span>
+          <p>This is a sample project by Tamzid Idrish, not an official page of any hospital. This page features Next.js, TypeScript, React, Tailwind CSS, Prisma, PostgreSQL, and Zod.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>© 2026 Northstar Health</span>
+            <a href="https://github.com/the3rd-dimension/Clinic-Appointment-Scheduler.git" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 self-start rounded-lg border border-[#c8d9cc] px-3 py-2 font-medium text-[#27604b] transition hover:bg-[#f0f6f1]">
+              <ExternalLink size={15} /> View the project on GitHub
+            </a>
+          </div>
         </div>
       </footer>
     </main>

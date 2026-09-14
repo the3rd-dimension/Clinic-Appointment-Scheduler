@@ -5,14 +5,6 @@ type RouteContext = {
   params: Promise<{ doctorId: string }>;
 };
 
-type DoctorRow = {
-  id: string;
-  name: string;
-  specialization: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
 export async function GET(
   _request: Request,
   { params }: RouteContext,
@@ -27,23 +19,23 @@ export async function GET(
       );
     }
 
-    const rows = await prisma.$queryRawUnsafe<DoctorRow[]>(
-      `
-        SELECT "id", "name", "specialization", "createdAt", "updatedAt"
-        FROM "Doctor"
-        WHERE "id" = $1
-      `,
-      doctorId,
-    );
+    const doctor = await prisma.doctor.findUnique({
+      where: { id: doctorId },
+      include: {
+        availability: {
+          orderBy: [{ dayOfWeek: "asc" }, { startMinute: "asc" }],
+        },
+      },
+    });
 
-    if (rows.length === 0) {
+    if (!doctor) {
       return NextResponse.json(
         { error: "Doctor not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json(rows[0]);
+    return NextResponse.json(doctor);
   } catch (error) {
     console.error("Failed to fetch doctor:", error);
 
